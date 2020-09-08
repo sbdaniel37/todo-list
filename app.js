@@ -1,11 +1,11 @@
 const express = require('express');
 const bodyParser = require('body-parser');
+const mongoose = require('mongoose');
+const _ = require('lodash');
+const Schema = mongoose.Schema;
 const date = require(__dirname + '/date.js');
 
 const app = express();
-
-const items = [];
-const workItems = [];
 
 app.set('view engine', 'ejs');
 
@@ -13,37 +13,139 @@ app.use(express.static('public'));
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
+mongoose.connect('mongodb://localhost:27017/todolistDB', { useNewUrlParser: true, useUnifiedTopology: true });
+
+mongoose.set('useFindAndModify', false);
+
+const itemsSchema = new Schema({
+	name: String
+});
+
+const Item = mongoose.model('Item', itemsSchema);
+
+const firstItem = new Item({
+	name: 'Welcome to your personal TODO-list!'
+});
+
+const secondItem = new Item({
+	name: 'Add new items to your list by hitting the + button.'
+});
+
+const thirdItem = new Item({
+	name: '<-- Hit this to cross off a finished item.'
+});
+
+const defaultItems = [ firstItem, secondItem, thirdItem ];
+
+const listSchema = new Schema({
+	name: String,
+	items: [ itemsSchema ]
+});
+
+const List = mongoose.model('List', listSchema);
+
 app.get('/', async (req, res) => {
 	const day = date.getDate();
 
 	try {
-		res.render('list', { listTitle: day, items: items });
+		Item.find({}, function(err, foundItems) {
+			if (foundItems.length === 0) {
+				Item.insertMany(defaultItems, function(err) {
+					if (err) {
+						console.log(err);
+					} else {
+						console.log('Successfully saved the default items!');
+					}
+				});
+				res.redirect('/');
+			} else {
+				res.render('list', { listTitle: day, items: foundItems });
+			}
+		});
 	} catch (err) {
 		console.log(err);
 	}
 });
 
-app.get('/work', async (req, res) => {
+app.get('/:listName', async (req, res) => {
+	const listName = _.capitalize(req.params.listName);
+
 	try {
-		res.render('list', { listTitle: 'Work List', items: workItems });
+		List.findOne({ name: listName }, function(err, foundList) {
+			if (!err) {
+				if (!foundList) {
+					const list = new List({
+						name: listName,
+						items: defaultItems
+					});
+
+					list.save(function(err) {
+						if (err) {
+							console.log(err);
+						} else {
+							res.redirect('/' + listName);
+						}
+					});
+				} else {
+					res.render('list', { listTitle: foundList.name, items: foundList.items });
+				}
+			} else {
+				console.log(err);
+			}
+		});
 	} catch (err) {
 		console.log(err);
 	}
 });
 
 app.post('/', async (req, res) => {
-	const item = req.body.item;
+	const itemName = req.body.item;
+	const listName = req.body.list;
+
+	const item = new Item({
+		name: itemName
+	});
 
 	try {
-		if (req.body.list === 'Work List') {
-			workItems.push(item);
-			res.redirect('/work');
-		} else {
-			items.push(item);
+		if (listName === date.getDate()) {
+			await Item.create({
+				name: itemName
+			});
 			res.redirect('/');
+		} else {
+			List.updateOne({ name: listName }, { $push: { items: item } }, function(err) {
+				if (err) {
+					console.log(err);
+				} else {
+					res.redirect('/' + listName);
+				}
+			});
 		}
 	} catch (err) {
 		console.log(err);
+	}
+});
+
+app.post('/delete', async (req, res) => {
+	const checkedItemId = req.body.checkbox;
+	const listName = req.body.listName;
+
+	if (listName === date.getDate()) {
+		Item.findByIdAndRemove(checkedItemId, function(err) {
+			if (err) {
+				console.log(err);
+			} else {
+				res.redirect('/');
+			}
+		});
+	} else {
+		List.updateOne({ name: listName }, { $pull: { items: { _id: checkedItemId } } }, function(err) {
+			if (err) {
+				console.log(err);
+			} else {
+				res.redirect('/' + listName);
+			}
+		});
 	}
 });
 
