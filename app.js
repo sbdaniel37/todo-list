@@ -1,3 +1,5 @@
+require('dotenv').config();
+
 const express = require('express');
 const bodyParser = require('body-parser');
 const mongoose = require('mongoose');
@@ -13,7 +15,15 @@ app.use(express.static('public'));
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
-mongoose.connect('mongodb://localhost:27017/todolistDB', { useNewUrlParser: true, useUnifiedTopology: true });
+mongoose.connect(
+	// 'mongodb://localhost:27017/todolistDB' ||
+	'mongodb+srv://' +
+		process.env.DB_USER +
+		':' +
+		process.env.DB_PASS +
+		'@todolist.qlmku.mongodb.net/todolistDB?retryWrites=true&w=majority',
+	{ useNewUrlParser: true, useUnifiedTopology: true }
+);
 
 mongoose.set('useFindAndModify', false);
 
@@ -49,17 +59,21 @@ app.get('/', async (req, res) => {
 
 	try {
 		Item.find({}, function(err, foundItems) {
-			if (foundItems.length === 0) {
-				Item.insertMany(defaultItems, function(err) {
-					if (err) {
-						console.log(err);
-					} else {
-						console.log('Successfully saved the default items!');
-					}
-				});
-				res.redirect('/');
+			if (err) {
+				console.log(err);
 			} else {
-				res.render('list', { listTitle: day, items: foundItems });
+				if (foundItems.length === 0) {
+					Item.insertMany(defaultItems, function(err) {
+						if (err) {
+							console.log(err);
+						} else {
+							console.log('Successfully saved the default items!');
+						}
+					});
+					res.redirect('/');
+				} else {
+					res.render('list', { listTitle: day, items: foundItems });
+				}
 			}
 		});
 	} catch (err) {
